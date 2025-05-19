@@ -10,6 +10,9 @@ const cookieParser = require("cookie-parser");
 
 const app = express();
 
+
+// const Upload = require("express-fileupload");
+// app.use(Upload());
 // CORS (Ensure proper setup)
 app.use(cors({
     credentials: true,

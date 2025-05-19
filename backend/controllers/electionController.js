@@ -15,60 +15,65 @@ const HttpError = require('../models/ErrorModal')
 
 const addElection = async (req, res, next) => {
     try {
-        // Only an admin can add an election
-        if (!req.user.isAdmin) {
+        // Check if user is admin
+        if (!req.user || !req.user.isAdmin) {
             return next(new HttpError("Only an admin can perform this action", 403));
         }
 
-        const { title, description, startDate, endDate } = req.body;
+        const { title, description, startDate, endDate, startTime, endTime } = req.body;
 
         // Validate required fields
-        if (!title || !description || !startDate || !endDate) {
-            return next(new HttpError("Fill all fields including start and end date.", 422));
+        if (!title || !description || !startDate || !endDate || !startTime || !endTime) {
+            return next(new HttpError("Fill all fields, including start date, end date, and times.", 422));
         }
 
-        // Validate date format
-        const start = new Date(startDate);
-        const end = new Date(endDate);
+        // Validate correct time format (HH:mm)
+        const timeRegex = /^([01]\d|2[0-3]):([0-5]\d)$/; // 24-hour format
+        if (!timeRegex.test(startTime) || !timeRegex.test(endTime)) {
+            return next(new HttpError("Invalid time format. Use HH:mm (24-hour format).", 422));
+        }
 
-
-        if (isNaN(start.getTime()) || isNaN(end.getTime())) {
+        // Ensure startDate and endDate are valid
+        if (isNaN(Date.parse(startDate)) || isNaN(Date.parse(endDate))) {
             return next(new HttpError("Invalid date format. Use YYYY-MM-DD.", 422));
         }
 
-        // Ensure startDate is before endDate
-        if (start >= end) {
-            return next(new HttpError("Start date must be before end date.", 422));
+        // Convert to Date objects correctly
+        const start = new Date(`${startDate}T${startTime}:00.000Z`);
+        const end = new Date(`${endDate}T${endTime}:00.000Z`);
+
+        if (isNaN(start.getTime()) || isNaN(end.getTime())) {
+            return next(new HttpError("Invalid date or time values. Please check input values.", 422));
         }
-        // const formattedStartDate = start.toISOString().split("T")[0];
-        // const formattedEndDate = end.toISOString().split("T")[0];
+
+        // Ensure startDateTime is before endDateTime
+        if (start >= end) {
+            return next(new HttpError("Start date and time must be before end date and time.", 422));
+        }
+
         // Check if thumbnail exists
         if (!req.files || !req.files.thumbnail) {
             return next(new HttpError("Choose a thumbnail.", 422));
         }
 
         const { thumbnail } = req.files;
+
+        // Check file size limit (1MB)
         if (thumbnail.size > 1000000) {
             return next(new HttpError("File size too big. Should be less than 1MB.", 422));
         }
 
-        // Rename the image
-        let fileName = thumbnail.name.split(".");
-        fileName = fileName[0] + uuid() + "." + fileName[fileName.length - 1];
+        // Generate unique file name
+        const fileExtension = path.extname(thumbnail.name); // Get file extension
+        const fileName = `${uuid()}${fileExtension}`;
 
-        // Upload file to the server
-        await thumbnail.mv(path.join(__dirname, '..', 'uploads', fileName), async (err) => {
-            if (err) {
-                return next(new HttpError("Error moving file.", 500));
-            }
+        // Move file to a temporary location before uploading
+        const tempFilePath = path.join(__dirname, "../uploads", fileName);
+        await thumbnail.mv(tempFilePath);
 
-            // Upload image to Cloudinary
-            const result = await cloudinary.uploader.upload(
-                path.join(__dirname, '..', "uploads", fileName),
-                { resource_type: "image" }
-            );
-
-            if (!result.secure_url) {
+        // Upload image to Cloudinary
+        cloudinary.uploader.upload(tempFilePath, { resource_type: "image" }, async (error, result) => {
+            if (error || !result.secure_url) {
                 return next(new HttpError("Couldn't upload image to Cloudinary.", 422));
             }
 
@@ -77,8 +82,10 @@ const addElection = async (req, res, next) => {
                 title,
                 description,
                 thumbnail: result.secure_url,
-                startDate: start, // Save as Date object
-                endDate: end      // Save as Date object
+                startDate,
+                endDate,
+                startTime,
+                endTime
             });
 
             res.json(newElection);
@@ -88,6 +95,256 @@ const addElection = async (req, res, next) => {
         return next(new HttpError(err.message || "Something went wrong.", 500));
     }
 };
+
+// const addElection = async (req, res, next) => {
+//     try {
+//         // Check if user is admin
+//         if (!req.user || !req.user.isAdmin) {
+//             return next(new HttpError("Only an admin can perform this action", 403));
+//         }
+
+//         const { title, description, startDate, endDate, startTime, endTime } = req.body;
+
+//         // Validate required fields
+//         if (!title || !description || !startDate || !endDate || !startTime || !endTime) {
+//             return next(new HttpError("Fill all fields, including start date, end date, and times.", 422));
+//         }
+
+//         // Validate correct time format (HH:mm)
+//         const timeRegex = /^([01]\d|2[0-3]):([0-5]\d)$/; // 24-hour format
+//         if (!timeRegex.test(startTime) || !timeRegex.test(endTime)) {
+//             return next(new HttpError("Invalid time format. Use HH:mm (24-hour format).", 422));
+//         }
+
+//         // Ensure startDate and endDate are valid
+//         if (isNaN(Date.parse(startDate)) || isNaN(Date.parse(endDate))) {
+//             return next(new HttpError("Invalid date format. Use YYYY-MM-DD.", 422));
+//         }
+
+//         // Convert to Date objects correctly
+//         const start = new Date(`${startDate}T${startTime}:00.000Z`);
+//         const end = new Date(`${endDate}T${endTime}:00.000Z`);
+
+//         if (isNaN(start.getTime()) || isNaN(end.getTime())) {
+//             return next(new HttpError("Invalid date or time values. Please check input values.", 422));
+//         }
+
+//         // Ensure startDateTime is before endDateTime
+//         if (start >= end) {
+//             return next(new HttpError("Start date and time must be before end date and time.", 422));
+//         }
+
+//         // Check if thumbnail exists
+//         if (!req.files || !req.files.thumbnail) {
+//             return next(new HttpError("Choose a thumbnail.", 422));
+//         }
+
+//         const { thumbnail } = req.files;
+
+//         // Check file size limit (1MB)
+//         if (thumbnail.size > 1000000) {
+//             return next(new HttpError("File size too big. Should be less than 1MB.", 422));
+//         }
+
+//         // Generate unique file name
+//         const fileExtension = path.extname(thumbnail.name); // Get file extension
+//         const fileName = `${uuidv4()}${fileExtension}`;
+
+//         // Upload image to Cloudinary
+//         const result = await cloudinary.uploader.upload_stream(
+//             { resource_type: "image" },
+//             async (error, result) => {
+//                 if (error || !result.secure_url) {
+//                     return next(new HttpError("Couldn't upload image to Cloudinary.", 422));
+//                 }
+
+//                 // Save Election to database
+//                 const newElection = await ElectionModel.create({
+//                     title,
+//                     description,
+//                     thumbnail: result.secure_url,
+//                     startDate,
+//                     endDate,
+//                     startTime,
+//                     endTime
+//                 });
+
+//                 res.json(newElection);
+//             }
+//         );
+
+//         thumbnail.mv(result);
+
+//     } catch (err) {
+//         return next(new HttpError(err.message || "Something went wrong.", 500));
+//     }
+// };
+// const addElection = async (req, res, next) => {
+//     try {
+//         // Only an admin can add an election
+//         if (!req.user.isAdmin) {
+//             return next(new HttpError("Only an admin can perform this action", 403));
+//         }
+
+//         const { title, description, startDate, endDate, startTime, endTime } = req.body;
+
+//         // Validate required fields
+//         if (!title || !description || !startDate || !endDate || !startTime || !endTime) {
+//             return next(new HttpError("Fill all fields, including start date, end date, and times.", 422));
+//         }
+
+//         // Validate correct time format (HH:mm)
+//         const timeRegex = /^([01]\d|2[0-3]):([0-5]\d)$/; // 24-hour format
+//         if (!timeRegex.test(startTime) || !timeRegex.test(endTime)) {
+//             return next(new HttpError("Invalid time format. Use HH:mm (24-hour format).", 422));
+//         }
+
+//         // Ensure startDate and endDate are valid
+//         if (isNaN(Date.parse(startDate)) || isNaN(Date.parse(endDate))) {
+//             return next(new HttpError("Invalid date format. Use YYYY-MM-DD.", 422));
+//         }
+
+//         // Convert to Date objects correctly
+//         const start = new Date(`${startDate}T${startTime}:00.000Z`);
+//         const end = new Date(`${endDate}T${endTime}:00.000Z`);
+
+//         if (isNaN(start.getTime()) || isNaN(end.getTime())) {
+//             return next(new HttpError("Invalid date or time values. Please check input values.", 422));
+//         }
+
+//         // Ensure startDateTime is before endDateTime
+//         if (start >= end) {
+//             return next(new HttpError("Start date and time must be before end date and time.", 422));
+//         }
+//         if (!req.files || !req.files.thumbnail) {
+//             return next(new HttpError("Choose a thumbnail.", 422));
+//         }
+
+//         // Check if thumbnail exists
+//         if (!req.files || !req.files.thumbnail) {
+//             return next(new HttpError("Choose a thumbnail.", 422));
+//         }
+
+//         const { thumbnail } = req.files;
+//         if (thumbnail.size > 1000000) {
+//             return next(new HttpError("File size too big. Should be less than 1MB.", 422));
+//         }
+
+//         // Rename the image
+//         // let fileName = thumbnail.name.split(".");
+//         let fileName = thumbnail.name ? thumbnail.name.split(".") : null;
+//         fileName = fileName[0] + uuid() + "." + fileName[fileName.length - 1];
+
+//         // Upload file to the server
+//         await thumbnail.mv(path.join(__dirname, "..", "uploads", fileName), async (err) => {
+//             if (err) {
+//                 return next(new HttpError("Error moving file.", 500));
+//             }
+
+//             // Upload image to Cloudinary
+//             const result = await cloudinary.uploader.upload(
+//                 path.join(__dirname, "..", "uploads", fileName),
+//                 { resource_type: "image" }
+//             );
+
+//             if (!result.secure_url) {
+//                 return next(new HttpError("Couldn't upload image to Cloudinary.", 422));
+//             }
+
+//             // Save Election to database
+//             const newElection = await ElectionModel.create({
+//                 title,
+//                 description,
+//                 thumbnail: result.secure_url,
+//                 startDate,
+//                 endDate,
+//                 startTime,
+//                 endTime
+//             });
+
+//             res.json(newElection);
+//         });
+
+//     } catch (err) {
+//         return next(new HttpError(err.message || "Something went wrong.", 500));
+//     }
+// };
+
+// const addElection = async (req, res, next) => {
+//     try {
+//         // Only an admin can add an election
+//         if (!req.user.isAdmin) {
+//             return next(new HttpError("Only an admin can perform this action", 403));
+//         }
+
+//         const { title, description, startDate, endDate } = req.body;
+
+//         // Validate required fields
+//         if (!title || !description || !startDate || !endDate) {
+//             return next(new HttpError("Fill all fields including start and end date.", 422));
+//         }
+
+//         // Validate date format
+//         const start = new Date(startDate);
+//         const end = new Date(endDate);
+
+
+//         if (isNaN(start.getTime()) || isNaN(end.getTime())) {
+//             return next(new HttpError("Invalid date format. Use YYYY-MM-DD.", 422));
+//         }
+
+//         // Ensure startDate is before endDate
+//         if (start >= end) {
+//             return next(new HttpError("Start date must be before end date.", 422));
+//         }
+//         // const formattedStartDate = start.toISOString().split("T")[0];
+//         // const formattedEndDate = end.toISOString().split("T")[0];
+//         // Check if thumbnail exists
+//         if (!req.files || !req.files.thumbnail) {
+//             return next(new HttpError("Choose a thumbnail.", 422));
+//         }
+
+//         const { thumbnail } = req.files;
+//         if (thumbnail.size > 1000000) {
+//             return next(new HttpError("File size too big. Should be less than 1MB.", 422));
+//         }
+
+//         // Rename the image
+//         let fileName = thumbnail.name.split(".");
+//         fileName = fileName[0] + uuid() + "." + fileName[fileName.length - 1];
+
+//         // Upload file to the server
+//         await thumbnail.mv(path.join(__dirname, '..', 'uploads', fileName), async (err) => {
+//             if (err) {
+//                 return next(new HttpError("Error moving file.", 500));
+//             }
+
+//             // Upload image to Cloudinary
+//             const result = await cloudinary.uploader.upload(
+//                 path.join(__dirname, '..', "uploads", fileName),
+//                 { resource_type: "image" }
+//             );
+
+//             if (!result.secure_url) {
+//                 return next(new HttpError("Couldn't upload image to Cloudinary.", 422));
+//             }
+
+//             // Save Election to database
+//             const newElection = await ElectionModel.create({
+//                 title,
+//                 description,
+//                 thumbnail: result.secure_url,
+//                 startDate: start, // Save as Date object
+//                 endDate: end      // Save as Date object
+//             });
+
+//             res.json(newElection);
+//         });
+
+//     } catch (err) {
+//         return next(new HttpError(err.message || "Something went wrong.", 500));
+//     }
+// };
 
 // const addElection = async (req, res, next) => {
 //     try {
@@ -147,6 +404,8 @@ const addElection = async (req, res, next) => {
 // ------------get election--------------
 //post: api/elections
 //protexted 
+
+
 const getElections = async (req, res, next) => {
     try {
         const elections = await ElectionModel.find();
@@ -219,6 +478,86 @@ const getElectionVoters = async (req, res, next) => {
 // ------------update election--------------
 //post: api/elections/:id
 //protexted only(admin)
+// const updateElection = async (req, res, next) => {
+//     try {
+//         // Only an admin can update election details
+//         if (!req.user.isAdmin) {
+//             return next(new HttpError("Only an admin can perform this action", 403));
+//         }
+
+//         const { id } = req.params;
+//         const { title, description, startDate, startTime, endDate, endTime } = req.body;
+
+//         // Ensure all required fields are provided
+//         if (!title || !description || !startDate || !startTime || !endDate || !endTime) {
+//             return next(new HttpError("Fill in all fields", 422));
+//         }
+
+//         // Convert startDate and endDate to valid Date objects
+//         const formattedStartDate = new Date(`${startDate}T${startTime}:00.000Z`);
+//         const formattedEndDate = new Date(`${endDate}T${endTime}:00.000Z`);
+
+//         // Check if dates are valid
+//         if (isNaN(formattedStartDate) || isNaN(formattedEndDate)) {
+//             return next(new HttpError("Invalid date format", 422));
+//         }
+
+//         // If a new thumbnail is uploaded, handle image processing
+//         if (req.files?.thumbnail) {
+//             const { thumbnail } = req.files;
+
+//             // Validate image size (should be < 1MB)
+//             if (thumbnail.size > 1000000) {
+//                 return next(new HttpError("Image size too big. Should be less than 1MB", 422));
+//             }
+
+//             // Rename the image
+//             let fileName = thumbnail.name.split(".");
+//             fileName = fileName[0] + uuid() + "." + fileName[fileName.length - 1];
+
+//             // Move image to server uploads folder
+//             const filePath = path.join(__dirname, '..', 'uploads', fileName);
+//             thumbnail.mv(filePath, async (err) => {
+//                 if (err) {
+//                     return next(new HttpError("Error moving image", 500));
+//                 }
+
+//                 // Upload image to Cloudinary
+//                 const result = await cloudinary.uploader.upload(filePath, { resource_type: "image" });
+
+//                 // Validate Cloudinary upload
+//                 if (!result.secure_url) {
+//                     return next(new HttpError("Image upload to Cloudinary not successful", 422));
+//                 }
+
+//                 // Update election with new image
+//                 await ElectionModel.findByIdAndUpdate(id, {
+//                     title,
+//                     description,
+//                     startDate: formattedStartDate,
+//                     endDate: formattedEndDate,
+//                     thumbnail: result.secure_url
+//                 });
+
+//                 res.json({ message: "Election updated successfully" });
+//             });
+//         } else {
+//             // Update election without modifying the thumbnail
+//             await ElectionModel.findByIdAndUpdate(id, {
+//                 title,
+//                 description,
+//                 startDate: formattedStartDate,
+//                 endDate: formattedEndDate
+//             });
+
+//             res.json({ message: "Election updated successfully" });
+//         }
+//     } catch (error) {
+//         return next(new HttpError(error.message, 500));
+//     }
+// };
+
+
 const updateElection = async (req, res, next) => {
 
     try {
@@ -228,8 +567,12 @@ const updateElection = async (req, res, next) => {
         }
 
         const { id } = req.params;
-        const { title, description, startDate, endDate } = req.body;
-        if (!title || !description || !startDate || !endDate) {
+        // const { title, description } = req.body;
+        // if (!title || !description) {
+        //     return next(new HttpError("Fill in all fields", 422))
+        // }
+        const { title, description, startDate, startTime, endDate, endTime } = req.body;
+        if (!title || !description || !startDate || !startTime || !endDate || !endTime) {
             return next(new HttpError("Fill in all fields", 422))
         }
         if (req.files.thumbnail) {
@@ -254,7 +597,7 @@ const updateElection = async (req, res, next) => {
                 if (!result.secure_url) {
                     return next(new HttpError("  image upload cloudinary not succesful", 422));
                 }
-                await ElectionModel.findByIdAndUpdate(id, { title, description, startDate, endDate, thumbnail: result.secure_url })
+                await ElectionModel.findByIdAndUpdate(id, { title, description, startDate, startTime, endDate, endTime, thumbnail: result.secure_url })
                 res.json("Eleection updates successfully")
             })
         }
@@ -270,6 +613,12 @@ const updateElection = async (req, res, next) => {
 
 // ------------delete election--------------
 //post: api/elections/:id
+
+
+
+
+
+
 //protexted only(admin)
 const removeElection = async (req, res, next) => {
 

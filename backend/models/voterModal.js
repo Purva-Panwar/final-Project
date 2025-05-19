@@ -10,8 +10,10 @@ const voterSchema = new Schema({
     password: { type: String, required: true },
     age: { type: Number, required: true },
     idnumber: { type: Number, required: true, unique: true },
-    gender: { type: String, required: true, enum: ["male", "female", "other"] },
 
+    gender: { type: String, required: true, enum: ["male", "female", "other"] },
+    // mobile: { type: Number, reauired: true },
+    // thumbnail: { type: String, required: true },
 
     // emailV
     verifyOtp: { type: String, default: '' },

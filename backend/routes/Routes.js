@@ -1,17 +1,21 @@
 const { Router } = require("express")
 
-const { registerVoter, loginVoter, sendVerifyOtp, logoutVoter, isAuthenticated, getVoter, verifyEmail, sendResetOtp, resetPassword } = require("../controllers/voterController")
+const { registerVoter, updateVoterProfile, loginVoter, logoutVoter, sendVerifyOtp, isAuthenticated, getVoter, verifyEmail, sendResetOtp, resetPassword } = require("../controllers/voterController")
 const { addElection, getElection, getElections, updateElection, removeElection, getCandidateOfElection, getElectionVoters } = require("../controllers/electionController")
 const { addCandidate, getCandidate, removeCandidate, voteCandidate } = require("../controllers/candidateController")
 
 
 const authMiddleware = require("../middleware/authMiddleware")
+// const { default: EditProfile } = require("../../frontend/src/pages/EditProfile")
 // const userAuth = require("../middleware/authMiddleware")
 
 const router = Router()
 
 router.post('/voters/register', registerVoter);
+router.put('/voters/:id', authMiddleware, updateVoterProfile);
+
 router.post('/voters/login', loginVoter);
+
 router.post('/voters/logout', authMiddleware, logoutVoter);
 
 // 
